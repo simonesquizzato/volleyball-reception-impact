@@ -1,0 +1,442 @@
+---
+title: 'Impatto della ricezione nel Campionato di Serie D 2023/2024: il caso studio Volley Salerno'
+author: "Simone Squizzato - Matr. 0212801023"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+# Analisi esplorativa
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(ggthemes)
+library(arm)
+library(caret)
+library(MASS)
+library(ROCR)
+library(blorr)
+library(car)
+```
+
+```{r}
+dati <- read_excel("Data_VS.xlsx")
+
+dati_fac <- dati |>
+  mutate(Matchday_fac = as.factor(Matchday),
+         Competizione_fac = as.factor(Competizione),
+         Casa_Trasferta_fac = as.factor(`Casa/Trasferta`),
+         Set_fac = as.factor(Set),
+         Rotazione_fac = as.factor(Rotazione),
+         Rotazione_Avv_fac = as.factor(Rotazione_Avv),
+         Pos_Battitore_fac = as.factor(Pos_Battitore),
+         Tipo_Battuta_fac = as.factor(Tipo_Battuta),
+         Pos_Ricettore_fac = as.factor(Pos_Ricettore),
+         Angolo_Ricezione_fac = as.factor(Angolo_Ricezione),
+         Score_Ricezione_fac = as.factor(Score_Ricezione),
+         Punto_fac = as.factor(Punto),
+         Punto_M_fac = as.factor(Punto_M))
+dati_fac$Angolo_Ricezione_fac <- relevel(dati_fac$Angolo_Ricezione_fac, ref = "MF") # Livello di riferimento MF
+dati_fac$Punto_M_fac <- relevel(dati_fac$Punto_M_fac, ref = "Banda_A") #Banda_A
+```
+
+```{r}
+# costruiamo il dataset in modo che risultino tutte le variabili di nostro interesse adeguatamente ordinate, selezionate e categorizzate
+dati_sel <- dati_fac[c(19:29, 11:17, 30:31)] 
+```
+
+## Caratteristiche del dataset
+
+```{r}
+str(dati_sel)
+```
+
+Introduciamo le nostre variabili, tenendo presente che tutte le analisi vengono svolte durante la fase di gioco denominata comunemente ricezione-punto (o cambio palla) e che tutte le unità statistiche osservate fanno riferimento alla squadra A.S.D. Volley Salerno Official, militante nel campionato di Serie D campano.
+
+### Descrizione delle variabili
+
+Ogni record del dataset si riferisce ad un punto effettuato nel corso di una partita, in particolare ogni punto si riferisce alla fase di cambio-palla (o ricezione-punto), fase del gioco della pallavolo in cui la squadra di riferimento si trova in ricezione, ossia pronta a ricevere la battuta effettuata dalla squadra avversaria.
+La registrazione di un record (riga) di dati, avviene nel momento in cui la squadra avversaria effettua una battuta che supera la rete che divide la metà campo e cade nella porzione di campo della squadra oggetto di studio, quando ciò accade vengono registrati:
+
+- La posizione da cui proviene la battuta;
+- Il tipo di battuta del giocatore avversario;
+- La rotazione in cui si trova la squadra oggetto di studio;
+- La rotazione in cui si trova la squadra avversaria;
+- La posizione occupata dal giocatore che riceve il pallone;
+- L'angolo con cui il giocatore che riceve impatta la palla;
+- Il valore associato alla qualità della ricezione;
+- La distribuzione degli attacchi effettuati durante il punto;
+- L'esito del punto.
+
+Osserviamo, in particolare, le seguenti variabili:
+
+-   Matchday_fac: fattore con 10 livelli contenente il nome identificativo della squadra avversaria
+
+-   Competizione_fac: fattore con 3 livelli (Memorial, Amichevole, Campionato) contenente il tipo di competizione in cui si è giocata la partita
+-   Casa_Trasferta_fac: variabile dummy indicante il luogo di svolgimento della partita (0 in trasferta/campo neutro, 1 in casa)
+
+-   Set_fac: fattore con 5 livelli (da 1 a 5) indicante il set di riferimento in cui si è giocato il punto (unità statistica) registrato
+
+-   Rotazione_fac: fattore con 6 livelli (da P1 a P6) indicante la rotazione di partenza della squadra in ricezione, secondo i canoni tattici del gioco della pallavolo;
+
+-   Rotazione_Avv_fac: fattore con 6 livelli (da P1 a P6) indicante la rotazione di partenza della squadra in battuta, secondo i canoni tattici del gioco della pallavolo;
+
+-   Pos_Battitore_fac: fattore con 3 livelli (A1, B6 e C5) indicante la zona antistante al punto da cui viene effettuata la battuta; 
+
+-   Tipo_Battuta_fac: fattore con 3 livelli (F, JF, S) indicante il tipo di battuta che viene effettuato dal battitore avversario;
+
+-   Pos_Ricettore_fac: fattore teoricamente con 6 livelli (da 1 a 6, formalmente da 5 perchè non registriamo nessuna ricezione in zona 4) indicante la zona occupata in campo dal ricettore seguendo la suddivisione classica del campo di pallavolo in 6 zone, osservabile dallo schema seguente:
+
+![](ZonesOfTheCourt.png)
+
+-   Angolo_Ricezione_fac: fattore con 10 livelli indicante la posizione del corpo che il giocatore assume durante l'esecuzione del fondamentale di ricezione (ad esempio per H si intendono tutti i tipi di palleggio o colpi sopra la testa, per MF, Middle-Forward, si intende un pallone colpito in bagher frontalmente e piegati in avanti, ecc.), precisazione importante è per il livello NA che include tutti i casi in cui la squadra subisce un ace (punto diretto) senza che ci sia un tentativo di intercettare il pallone.
+
+![](Angolo_Ricezione.png)
+
+-   Score_Ricezione_fac: fattore con 4 livelli (da 0 a 3) indicante la qualità della ricezione, assegnato in base alla posizione e all'altezza in cui il palleggiatore (o chi effettua il secondo tocco) impatta il pallone, la valutazione generalmente viene valutata in primis per la posizione in cui cade l'alzata a cui viene sottratto un punto se l'alzata non viene effettuata dal palleggiatore e un punto se chi alza non può effettuare l'alzata in palleggio o in posizione comoda (ad es. necessita di abbassarsi o contorcersi per alzare).
+
+![](Passing_Average.png)
+
+-   Score_Ricezione: la variabile precedente ma riportata come numerica;
+
+-   Banda: variabile di conteggio indicante il numero di volte in cui il palleggiatore alza il pallone, nel corso della stessa azione, al giocatore che ricopre il ruolo di banda;
+
+-   Centrale: variabile di conteggio indicante il numero di volte in cui il palleggiatore alza il pallone, nel corso della stessa azione, al giocatore che ricopre il ruolo di centrale;
+
+-   Opposto: variabile di conteggio indicante il numero di volte in cui il palleggiatore alza il pallone, nel corso della stessa azione, al giocatore che ricopre il ruolo di opposto;
+
+-   Palleggiatore: variabile di conteggio indicante il numero di volte in cui il palleggiatore non alza il pallone, nel corso della stessa azione, provando ad attaccare;
+
+-   Banda2: variabile di conteggio indicante il numero di volte in cui il palleggiatore alza il pallone, nel corso della stessa azione, al giocatore che ricopre il ruolo di banda di seconda linea;
+
+-   Punto: versione numerica della variabile Punto_fac;
+
+-   Punto_fac: variabile dummy indicante l'esito del punto giocato (dove 0 indica punto perso mentre 1 indica punto vinto);
+
+-   Punto_M_fac: fattore con 23 livelli indicante la modalità o causa di conclusione del punto, tale variabile è risultata utile soprattutto nel corso della stagione come supporto alle decisioni dello staff tecnico della squadra.
+
+### Summary dei dati
+
+```{r}
+summary(dati_sel)
+```
+
+Mediante un primo summary dei dati possiamo vedere come si distribuiscono in termini assoluti le nostre variabili categoriali, notiamo con piacere una distribuzione bilanciata della variabile Punto_fac, che presenta circa il 52% di punti vinti e, conseguentemente, il 48% di punti non vinti. Risultano invece fortemente sbilanciate le distribuzioni delle variabili Casa_Trasferta_fac, Pos_Battitore_fac e Tipo_Battuta_fac. Analizzeremo nel dettaglio le altre variabili categoriali e le variabili numeriche di seguito.
+
+### Analisi grafica
+
+```{r, fig.cap= "Pair Plot"}
+GGally::ggpairs(dati_sel[12:18])
+```
+
+Dall'analisi del pair plot, per le variabili numeriche contenute nel dataset, possiamo vedere la matrice di correlazioni tra le covariate. Esistono correlazioni interessanti tra la variabile Punto e lo Score_Ricezione, così come tra la variabile Punto e la variabile Centrale entrambe positive. Ci aspettavamo questo tipo di relazione positiva in quanto generalmente si tende a giocare con i centrali solo quando vi è un ottima ricezione (score 2/3, correlazione anche qui positiva pari a 0.302) inoltre, l'attacco proveniente da questi giocatori è risolutivo o mette in forte difficoltà la squadra avversaria.
+
+Lo schema di correlazioni si avvicina all'importanza dei ruoli nella pallavolo dal punto di vista offensivo, nella pallavolo moderna, infatti, il ruolo più impattante soprattutto nelle serie minori risulta essere quello degli opposti (0.096) e dei centrali (0.146), più difficile vedere l'impatto dei giocatori di banda e tanto meno dei palleggiatori.
+
+Il pair plot ci permette anche di valutare la distribuzione delle nostre variabili numeriche, i giocatori che vengono coinvolti più spesso in maniera ripetuta all'interno di un singolo punto sono bande e opposti, in minima parte ciò accade per i centrali, anche per quanto detto in precedenza.
+
+Passiamo ora a valutare la distribuzione delle variabili discrete.
+
+```{r, fig.cap="Distribuzione della zona di ricezione"}
+dati_sel |>
+  ggplot(aes(Pos_Ricettore_fac, fill = Pos_Ricettore_fac)) +
+  geom_bar() + ggtitle("Distribuzione della zona di ricezione") + theme_fivethirtyeight()
+```
+
+Come intravisto dal summary dei dati la distribuzione della posizione del ricettore è leggermente sbilanciata a favore della zona 6. Il risultato non è inaspettato in quanto la zona 6 è la zona centrale del campo ed è a più riprese presidiata dai liberi che hanno come loro punto di forza la ricezione motivo per cui lo sbilanciamento ritrovato non risulta anomalo.
+
+```{r, fig.cap="Distribuzione dello Score Ricezione"}
+dati_sel |>
+  ggplot(aes(Score_Ricezione, fill = Score_Ricezione_fac)) +
+  geom_bar() + ggtitle("Distribuzione dello Score Ricezione") + theme_fivethirtyeight()
+```
+
+```{r}
+prop.table(table(dati_sel$Score_Ricezione_fac))*100
+```
+
+```{r, fig.cap="Distribuzione dello Score Ricezione condizionata all'esito del punto"}
+dati_sel |>
+  ggplot(aes(Score_Ricezione, fill = Score_Ricezione_fac)) +
+  facet_wrap(~Punto_fac) + geom_bar() + ggtitle("Distribuzione dello Score Ricezione 
+condizionata all'esito del punto") + theme_fivethirtyeight()
+```
+
+```{r}
+prop.table(table(dati_sel$Score_Ricezione_fac, dati_sel$Punto_fac))*100
+```
+
+L'impatto della qualità della ricezione sull'esito del punto è facilmente osservabile dal barplot contenuto nella figura 4 che mostra un sensibile decremento delle ricezioni valutate con lo score massimo e un notevole incremento delle ricezioni valutate con lo score minimo in corrispondenza dell'esito di punto non conquistato (0). In particolare il numero di ricezioni perfette diminuisce di circa 60 unità, mentre il numero di ricezioni pessime aumenta di circa 40 unità; in termini percentuali le due differenze indicate valgono un decremento dell'11% e un aumento di circa l'8.5% rispettivamente.
+
+```{r, fig.cap="Distribuzione dell'angolo di ricezione"}
+dati_sel |>
+  ggplot(aes(fct_rev(fct_infreq(Angolo_Ricezione_fac)), fill = Angolo_Ricezione_fac)) + geom_bar() + ggtitle("Distribuzione dell'angolo di ricezione") + theme_fivethirtyeight() + coord_flip()
+```
+
+```{r}
+table(fct_infreq(dati_sel$Angolo_Ricezione_fac))
+prop.table(table(fct_infreq(dati_sel$Angolo_Ricezione_fac)))*100
+```
+
+Per quanto riguarda la variabile Angolo_Ricezione è possibile vedere come la maggior parte delle ricezioni (53.5%) avvengono in palleggio (H) o in bagher frontrale (MF).
+
+```{r, fig.cap="Distribuzione della modalità di conclusione del punto condizionata all'esito"}
+dati_sel |>
+  ggplot(aes(fct_rev(Punto_M_fac), fill = Punto_M_fac)) + 
+  geom_bar() + facet_wrap(~Punto_fac) + ggtitle("Distribuzione della modalità di conclusione del punto condizionata all'esito") + theme_fivethirtyeight() + coord_flip()
+```
+
+*Si consiglia di aprire il grafico in R per una visualizzazione migliore delle categorie che compongono la variabile*
+
+Osservando il barplot relativo alla modalità di conclusione del punto è possibile notare come si possano distinguere un buon numero di categorie relative solo alla non conquista del punto (ad es. Ricezione, Palleggiatore_2, le variabili Ruolo_MS e le Difesa_x, fatta eccezione un osservazione), altre categorie relative esclusivamente alla conquista del punto (ad es. Errore_Avv) e un ultimo folto gruppo "ibrido" che ricade in entrambe le casistiche (si pensi in primis agli attacchi), in funzione di ciò potremmo calcolare l'efficacia degli attaccanti (per ruolo) utilizzando il rapporto tra punti vinti e persi in fase di attacco.
+
+
+# Implementazione 
+
+```{r}
+library(DescTools)
+```
+
+```{r}
+#ENCODING VARIABILI CATEGORIALI
+one_hot_Punto_M <- model.matrix(~ Punto_M_fac - 1, data = dati_sel)
+
+one_hot_Angolo_Ricezione <- model.matrix(~ Angolo_Ricezione_fac - 1, data = dati_sel)
+
+one_hot_Matchday <- model.matrix(~ Matchday_fac - 1, data = dati_sel)
+
+one_hot_Comp <- model.matrix(~Competizione_fac - 1, data = dati_sel)
+
+# Aggiungiamo queste nuove colonne al data frame originale
+#dati_sel_one_hot <- cbind(dati_sel[-c(10, 20)], one_hot_Punto_M, one_hot_Angolo_Ricezione)
+
+
+
+```
+
+
+
+```{r}
+mod_logit <- glm(Punto ~ Score_Ricezione_fac + Opposto + Centrale + Banda2, data = dati_sel, family = binomial(link = "logit"))
+```
+
+```{r}
+summary(mod_logit)
+```
+### Interpretazione logit su variabile binaria, intercetta e oddsRatio
+Commentiamo l'output del modello di regressione logistica.
+
+Intercept (Intercetta)
+Estimate: -1.0563
+Pr(>|z|): 4.86e-06 (* significativa)**
+L'intercetta rappresenta il log-odds di vincere un punto quando tutte le variabili esplicative sono uguali a zero. Un valore negativo indica che, in assenza di altri effetti, la squadra ha meno probabilità di vincere un punto rispetto a perderlo.
+
+Score_Ricezione_fac
+Questa variabile categoriale misura la qualità della ricezione con tre livelli, dove "0" potrebbe essere la categoria di riferimento (non mostrata nell'output).
+
+Score_Ricezione_fac1: 0.6901
+
+Pr(>|z|): 0.056664 (.) marginalmente significativa
+Score_Ricezione_fac2: 0.9973
+
+Pr(>|z|): 0.000815 ( * ) altamente significativa**
+Score_Ricezione_fac3: 1.2212
+
+Pr(>|z|): 7.31e-06 ( * ) altamente significativa**
+Un aumento del livello di Score_Ricezione_fac è associato a un aumento dei log-odds di vincere un punto. In particolare, rispetto alla categoria di riferimento (che potrebbe essere la peggiore ricezione), avere una ricezione di qualità fac1, fac2, o fac3 aumenta significativamente la probabilità di vincere un punto, con un incremento maggiore all'aumentare della qualità della ricezione.
+
+Opposto
+Estimate: 0.3415
+Pr(>|z|): 0.029269 (*) significativa
+Avere l'opposto come attaccante aumenta i log-odds di vincere un punto. Questo effetto è significativo e suggerisce che l'opposto contribuisce positivamente alla probabilità di vincere un punto.
+
+Centrale
+Estimate: 0.4578
+Pr(>|z|): 0.027013 (*) significativa
+Simile all'opposto, avere il centrale come attaccante è associato a un aumento dei log-odds di vincere un punto. Anche questo effetto è significativo.
+
+Banda2
+Estimate: -1.1299
+Pr(>|z|): 0.076374 (.) marginalmente significativa
+Avere la Banda2 come attaccante è associato a una diminuzione dei log-odds di vincere un punto. Questo effetto, seppur marginalmente significativo, indica una tendenza negativa nel contributo della Banda2 alla probabilità di vincere un punto.
+
+Commento Generale
+Le variabili relative alla qualità della ricezione (Score_Ricezione_fac) hanno un forte impatto sulla probabilità di vincere un punto, con effetti positivi e significativi.
+Gli attaccanti centrali e opposti hanno un impatto positivo significativo, suggerendo che queste posizioni sono cruciali per vincere punti.
+La Banda2 mostra un effetto negativo, che potrebbe essere un'area da esplorare ulteriormente per capire se ci sono specifiche problematiche o se è una questione strategica.
+Indici di Adeguatezza del Modello
+Null deviance: 706.23 contro Residual deviance: 661.38 indica che il modello ha ridotto in modo significativo la devianza, suggerendo un buon miglioramento rispetto al modello nullo.
+AIC: 675.38 è un indicatore utile per confrontare modelli diversi; un AIC più basso indicherebbe un modello migliore.
+Conclusione
+I coefficienti del modello logit indicano chiaramente che la qualità della ricezione e la scelta dell'attaccante sono fattori determinanti nella probabilità di vincere un punto. Questi risultati potrebbero guidare decisioni strategiche nelle partite di pallavolo per ottimizzare la probabilità di successo nei punti.
+
+
+### Misure di accuratezza - OddsRatio - Analisi dei residui
+
+```{r}
+PseudoR2(mod_logit, c("McFadden","Nagel","CoxSnell"))
+OddsRatio(mod_logit)
+plot(OddsRatio(mod_logit))
+```
+
+### Analisi dei residui e diagnostica sulla collinearità
+
+#### VIF (Variance Inflation Factor)
+
+Vediamo il VIF (Variance Inflation Factor), che misura la varianza nelle varianze delle stime dei parametri dovuta alla collinearità esistente tra i predittori. E’ un amisura di quanto la varianza dei coefficienti stimati risentono dell’esistenza della correlazine tra i predittori nel modello. Un VIF uguale a 1 indica che non c’è correlazione tra il predittore k e le altre variabili rimanenti, e quindi la sua varianza non è influenzata dalla correlazione.
+
+La regola generale è che un VIF maggiore di 4, richiede ulteriori investigazoni, mentre un VIF che eccede 10 è segno di seri problemi di multicollinearità, che richiedono un’azione correttiva.
+
+Si parte dal considerare gli autovalori, che sono usati perché la correlazione tra le variabili viene scomposta in combinazioni lineari. Queste ultime sono scelte così che la prima combinazione ha la più varianza (soggetta ad alcune restrizioni), la seconda combinazione ha la varianza più alta successiva, soggetta al vincolo di incorrelazione con la prima, e così via con le successive. Si estraggono tante combinazioni quante sono le variabili. L’autovalore è la varianza della combinazione. Il condition index si ottiene andando a considerare la radice quadrata del più alto autovalore diviso per ciascun autovalore.
+
+*FORMULA CONDITION INDEX*
+
+Un valore di condizione tra 10 e 30 indica la presenza di multicollinearità, quando questo è maggiore di 30 la collinearità è da considerare severa.
+
+```{r}
+library(blorr)
+blr_coll_diag(mod_logit)
+
+# Belsley, D. A., Kuh, E., and Welsch, R. E. (1980). Regression Diagnostics: Identifying Influential Data and Sources of Collinearity. New York: John Wiley & Sons.
+```
+
+
+
+#### Binnedplot
+```{r}
+binnedplot(fitted(mod_logit),
+           residuals(mod_logit, type = "response"))
+```
+
+Molto interessante è il binnedplot. Se il modello è buono, il 95% dei residui devono ricadere all’interno delle bande di errore, nel nostro caso questo accade quindi abbiamo una prima conferma sulla bontà di adattamento del nostro modello.
+
+```{r}
+plot(mod_logit, which = 2) # Normal QQ Residual Plot
+```
+
+I residui seguono in gran parte i quantili teorici di una distribuzione normale motivo per cui possiamo definire i residui come distribuiti normalmente.
+
+#### Plot dei residui e valori anomali
+
+```{r}
+library(car)
+marginalModelPlots(mod_logit) #homoscedasticity assumption
+```
+
+I risultati del residualPlots mostrano dei residui molto vicini alla media zero, nota positiva.
+
+Il marginal model plots ci aiuta a capire se il modello si adatta bene ai dati; le due linee (relative ad andamento dei dati e del modello) sono simili, quindi il modello riesce a riprodurli in maniera accurata.
+
+```{r}
+plot(mod_logit, which = 1)
+```
+
+Nella figura  i residui sembrano distribuirsi abbastanza uniformemente attorno alla linea zero, senza una chiara tendenza crescente o decrescente. Questo indica che il modello potrebbe essere adeguato e non vi è una chiara indicazione di non linearità.
+
+Non sembra esserci un chiaro pattern a "ventaglio" che indichi eteroschedasticità (varianza dei residui che aumenta o diminuisce con i valori previsti). Tuttavia, ci sono delle osservazioni ai margini esterni che potrebbero suggerire un leggero aumento della varianza dei residui con valori previsti estremi, ma questo non è fortemente pronunciato.
+
+Nel grafico, alcune osservazioni sono etichettate, questi punti potrebbero essere considerati outliers potenzialmente influenti. È importante analizzare ulteriormente queste osservazioni per capire se stanno influenzando in modo significativo il modello.
+
+```{r}
+outlierTest(mod_logit)
+```
+
+Con outlierTest si controlla se ci sono valori eccezionali. Nel caso in cui ci fossero, non significa che bisogna toglierli, ma dobbiamo solo stare attenti ad essi. Le osservazioni sono considerate outliers se p-value di Bonferroni è minore di 0.05. Come si può notare, sembrerebbe che ci sia solo una osservazione (la n. 327) che presenta una situazione critica. Ma il p-value di Bonferroni è mancante. Ciò significa che non è statistica significativa; è vero che presenta un residuo positivo più grande, che indica che il valore osservato è più grande di quello stimato, ma questo valore non è statisticamente significativo.
+
+```{r}
+influencePlot(mod_logit) 
+```
+
+L’influence plot è un grafico in cui la grandezza della bubble indica la distanza di Cook. Se D (distanza di Cook) < 0.5, allora i punti non sono influenti; se D è compreso tra 0.5 e 1, allora sono potenzialmente influenti, se è maggiore o uguale ad 1, sono probabilmente influenti.
+
+Nei casi analizzati la CookD è di molto inferiore a 0.5 quindi i punti seppur outliers risultano ininfluenti.
+
+#### Performance del modello
+
+```{r}
+PseudoR2(mod_logit)
+
+# Valutare performance del modello 
+ranking <- predict(mod_logit, type = "response") 
+predicted.classes <- ifelse(ranking > 0.52, 1, 0)
+
+
+confusionMatrix(as.factor(predicted.classes), as.factor(dati_sel$Punto), positive = "1")
+
+pred <- prediction(ranking, dati_sel$Punto)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+
+plot(perf, col="red", main="ROC curve", xlab="Specificity",
+       ylab="Sensitivity")
+abline(0, 1) #add a 45 degree line
+
+AUC <- performance(pred, "auc")
+AUC@y.values
+```
+
+
+### Variable selection
+
+```{r}
+library(MASS)
+library(stringr)
+dati_sel_no_fac <- dati_sel[-c(1,2,10,12,19,20)]
+#dati_sel_no_fac <- cbind(dati_sel_no_fac, one_hot_Punto_M, one_hot_Angolo_Ricezione)
+dati_sel_no_fac <- cbind(dati_sel_no_fac, one_hot_Matchday, one_hot_Comp)
+
+
+mod_null <- glm(Punto ~ 1, data = dati_sel_no_fac, family = binomial(link = "logit"))
+
+variables <- names(dati_sel_no_fac)[-14]
+
+mod_full <- paste("Punto", str_c(variables, collapse="+"), sep="~")
+
+Step5.reg <- stepAIC(mod_null, direction="forward", mod_full, trace = F)
+summary(Step5.reg)
+```
+
+
+
+#### Performance del modello 2
+
+```{r}
+# Valutare performance del modello 
+ranking <- predict(Step5.reg, type = "response") 
+predicted.classes <- ifelse(ranking > 0.52, 1, 0)
+
+
+confusionMatrix(as.factor(predicted.classes), as.factor(dati_sel$Punto), positive = "1")
+
+pred <- prediction(ranking, dati_sel$Punto)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+
+plot(perf, col="red", main="ROC curve", xlab="Specificity",
+       ylab="Sensitivity")
+abline(0, 1) #add a 45 degree line
+
+AUC <- performance(pred, "auc")
+AUC@y.values
+```
+
+```{r}
+plot(OddsRatio(Step5.reg))
+marginalModelPlots(Step5.reg)
+outlierTest(Step5.reg)
+plot(Step5.reg, which = 1)
+plot(Step5.reg, which = 2) # Normal QQ Residual Plot
+influencePlot(Step5.reg) 
+```
+
+```{r}
+lmtest::lrtest(mod_logit, Step5.reg)
+```
+
+```{r}
+PseudoR2(Step5.reg, c("Nagel", "McFadden", "Cox"))
+```
+
