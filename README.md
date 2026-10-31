@@ -45,3 +45,5 @@ Osserviamo, in particolare, le seguenti variabili:
 -   Punto_M_fac: fattore con 23 livelli indicante la modalità o causa di conclusione del punto, tale variabile è risultata utile soprattutto nel corso della stagione come supporto alle decisioni dello staff tecnico della squadra. 
 
 Il file Reception-Impact-Analysis.Rmd contiene il codice legato alle operazioni di data wrangling, all'analisi esplorativa dei dati, alla modellazione e all'analisi dei residui del modello stimato.
+
+I file Abstract_Tesi_Simone_Squizzato.pdf e Tesi_Simone_Squizzato.pdf contengono, rispettivamente, l'Abstract e la Tesi relativi al progetto sviluppato.
