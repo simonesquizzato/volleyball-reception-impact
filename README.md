@@ -1,7 +1,7 @@
 # reception-impact-analysis
 Progetto realizzato nell'ambito della Tesi Triennale in Modelli Statistici che mira ad analizzare quali fattori siano maggiormente impattanti per la conquista di un punto nel campionato di serie D campana nella stagione 2023/2024.
 
-l progetto è stato realizzato nell'ambito della Tesi Triennale in Modelli Statistici e mira ad analizzare quali fattori siano maggiormente impattanti per la conquista di un punto nel campionato di serie D campana nella stagione 2023/2024. In particolare, l'analisi si pone l'obiettivo di quantificare l'impatto della qualità della ricezione utilizzando un modello di regressione logistica. 
+Il progetto è stato realizzato nell'ambito della Tesi Triennale in Modelli Statistici e mira ad analizzare quali fattori siano maggiormente impattanti per la conquista di un punto nel campionato di serie D campana nella stagione 2023/2024. In particolare, l'analisi si pone l'obiettivo di quantificare l'impatto della qualità della ricezione utilizzando un modello di regressione logistica. 
 
 Il file Data_VS.xlsx contiene i dati su cui è stata svolta l'analisi . Ogni record del dataset si riferisce ad un punto effettuato nel corso di una partita, in particolare ogni punto si riferisce alla fase di cambio-palla (o ricezione-punto), fase del gioco della pallavolo in cui la squadra di riferimento si trova in ricezione, ossia pronta a ricevere la battuta effettuata dalla squadra avversaria.
 La registrazione di un record avviene nel momento in cui la squadra avversaria effettua una battuta che supera la rete che divide la metà campo e cade nella porzione di campo della squadra oggetto di studio, quando ciò accade vengono registrati:
